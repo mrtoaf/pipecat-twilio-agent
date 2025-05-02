@@ -1,0 +1,769 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+templates/
+  streams.xml.template
+.env.example
+.gitignore
+bot.py
+client.py
+README.md
+requirements.txt
+server.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="templates/streams.xml.template">
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="wss://<your server url>/ws"></Stream>
+  </Connect>
+  <Pause length="40"/>
+</Response>
+</file>
+
+<file path=".env.example">
+OPENAI_API_KEY=<your-openai-api-key>
+DEEPGRAM_API_KEY=<your-deepgram-api-key>
+ELEVEN_API_KEY=<your-elevenlabs-api-key>
+ELEVEN_VOICE_ID=<your-elevenlabs-voice-id>
+</file>
+
+<file path=".gitignore">
+templates/streams.xml
+server_0_recording*
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+#   For a library or package, you might want to ignore these files since the code is
+#   intended to run in multiple environments; otherwise, check them in:
+# .python-version
+
+# pipenv
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+#   However, in case of collaboration, if having platform-specific dependencies or dependencies
+#   having no cross-platform support, pipenv may install dependencies that don't work, or not
+#   install all needed dependencies.
+#Pipfile.lock
+
+# poetry
+#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
+#   This is especially recommended for binary packages to ensure reproducibility, and is more
+#   commonly ignored for libraries.
+#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
+#poetry.lock
+
+# pdm
+#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
+#pdm.lock
+#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
+#   in version control.
+#   https://pdm.fming.dev/#use-with-ide
+.pdm.toml
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# PyCharm
+#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
+#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
+#  and can be added to the global gitignore or merged into this file.  For a more nuclear
+#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
+#.idea/
+runpod.toml
+</file>
+
+<file path="bot.py">
+#
+# Copyright (c) 2025, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
+
+import datetime
+import io
+import os
+import sys
+import wave
+
+import aiofiles
+from dotenv import load_dotenv
+from fastapi import WebSocket
+from loguru import logger
+
+from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.pipeline.pipeline import Pipeline
+from pipecat.pipeline.runner import PipelineRunner
+from pipecat.pipeline.task import PipelineParams, PipelineTask
+from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+from pipecat.processors.audio.audio_buffer_processor import AudioBufferProcessor
+from pipecat.serializers.twilio import TwilioFrameSerializer
+from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
+from pipecat.services.deepgram.stt import DeepgramSTTService
+from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.transports.network.fastapi_websocket import (
+    FastAPIWebsocketParams,
+    FastAPIWebsocketTransport,
+)
+
+load_dotenv(override=True)
+
+logger.remove(0)
+logger.add(sys.stderr, level="DEBUG")
+
+
+async def save_audio(server_name: str, audio: bytes, sample_rate: int, num_channels: int):
+    if len(audio) > 0:
+        filename = (
+            f"{server_name}_recording_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
+        )
+        with io.BytesIO() as buffer:
+            with wave.open(buffer, "wb") as wf:
+                wf.setsampwidth(2)
+                wf.setnchannels(num_channels)
+                wf.setframerate(sample_rate)
+                wf.writeframes(audio)
+            async with aiofiles.open(filename, "wb") as file:
+                await file.write(buffer.getvalue())
+        logger.info(f"Merged audio saved to {filename}")
+    else:
+        logger.info("No audio data to save")
+
+
+async def run_bot(websocket_client: WebSocket, stream_sid: str, testing: bool):
+    transport = FastAPIWebsocketTransport(
+        websocket=websocket_client,
+        params=FastAPIWebsocketParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+            add_wav_header=False,
+            vad_enabled=True,
+            vad_analyzer=SileroVADAnalyzer(),
+            vad_audio_passthrough=True,
+            serializer=TwilioFrameSerializer(stream_sid),
+        ),
+    )
+
+    llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
+
+    stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"), audio_passthrough=True)
+
+    tts = ElevenLabsTTSService(
+            api_key=os.getenv("ELEVEN_API_KEY"),
+            voice_id=os.getenv("ELEVEN_VOICE_ID"),
+    )
+
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant named Tasha. Your output will be converted to audio so don't include special characters in your answers. Respond with a short short sentence.",
+        },
+    ]
+
+    context = OpenAILLMContext(messages)
+    context_aggregator = llm.create_context_aggregator(context)
+
+    # NOTE: Watch out! This will save all the conversation in memory. You can
+    # pass `buffer_size` to get periodic callbacks.
+    audiobuffer = AudioBufferProcessor(user_continuous_stream=not testing)
+
+    pipeline = Pipeline(
+        [
+            transport.input(),  # Websocket input from client
+            stt,  # Speech-To-Text
+            context_aggregator.user(),
+            llm,  # LLM
+            tts,  # Text-To-Speech
+            transport.output(),  # Websocket output to client
+            audiobuffer,  # Used to buffer the audio in the pipeline
+            context_aggregator.assistant(),
+        ]
+    )
+
+    task = PipelineTask(
+        pipeline,
+        params=PipelineParams(
+            audio_in_sample_rate=8000,
+            audio_out_sample_rate=8000,
+            allow_interruptions=True,
+        ),
+    )
+
+    @transport.event_handler("on_client_connected")
+    async def on_client_connected(transport, client):
+        # Start recording.
+        await audiobuffer.start_recording()
+        # Kick off the conversation.
+        messages.append({"role": "system", "content": "Please introduce yourself to the user."})
+        await task.queue_frames([context_aggregator.user().get_context_frame()])
+
+    @transport.event_handler("on_client_disconnected")
+    async def on_client_disconnected(transport, client):
+        await task.cancel()
+
+    @audiobuffer.event_handler("on_audio_data")
+    async def on_audio_data(buffer, audio, sample_rate, num_channels):
+        server_name = f"server_{websocket_client.client.port}"
+        await save_audio(server_name, audio, sample_rate, num_channels)
+
+    # We use `handle_sigint=False` because `uvicorn` is controlling keyboard
+    # interruptions. We use `force_gc=True` to force garbage collection after
+    # the runner finishes running a task which could be useful for long running
+    # applications with multiple clients connecting.
+    runner = PipelineRunner(handle_sigint=False, force_gc=True)
+
+    await runner.run(task)
+</file>
+
+<file path="client.py">
+#
+# Copyright (c) 2025, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
+
+import argparse
+import asyncio
+import datetime
+import io
+import os
+import sys
+import wave
+import xml.etree.ElementTree as ET
+from uuid import uuid4
+
+import aiofiles
+import aiohttp
+from dotenv import load_dotenv
+from loguru import logger
+
+from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
+from pipecat.frames.frames import EndFrame, TransportMessageUrgentFrame
+from pipecat.pipeline.pipeline import Pipeline
+from pipecat.pipeline.runner import PipelineRunner
+from pipecat.pipeline.task import PipelineParams, PipelineTask
+from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+from pipecat.processors.audio.audio_buffer_processor import AudioBufferProcessor
+from pipecat.serializers.twilio import TwilioFrameSerializer
+from pipecat.services.cartesia.tts import CartesiaTTSService
+from pipecat.services.deepgram.stt import DeepgramSTTService
+from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.transports.network.websocket_client import (
+    WebsocketClientParams,
+    WebsocketClientTransport,
+)
+
+load_dotenv(override=True)
+
+logger.remove(0)
+logger.add(sys.stderr, level="DEBUG")
+
+
+DEFAULT_CLIENT_DURATION = 30
+
+
+async def download_twiml(server_url: str) -> str:
+    # TODO(aleix): add error checking.
+    async with aiohttp.ClientSession() as session:
+        async with session.post(server_url) as response:
+            return await response.text()
+
+
+def get_stream_url_from_twiml(twiml: str) -> str:
+    root = ET.fromstring(twiml)
+    # TODO(aleix): add error checking.
+    stream_element = root.find(".//Stream")  # Finds the first <Stream> element
+    url = stream_element.get("url")
+    return url
+
+
+async def save_audio(client_name: str, audio: bytes, sample_rate: int, num_channels: int):
+    if len(audio) > 0:
+        filename = (
+            f"{client_name}_recording_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
+        )
+        with io.BytesIO() as buffer:
+            with wave.open(buffer, "wb") as wf:
+                wf.setsampwidth(2)
+                wf.setnchannels(num_channels)
+                wf.setframerate(sample_rate)
+                wf.writeframes(audio)
+            async with aiofiles.open(filename, "wb") as file:
+                await file.write(buffer.getvalue())
+        logger.info(f"Merged audio saved to {filename}")
+    else:
+        logger.info("No audio data to save")
+
+
+async def run_client(client_name: str, server_url: str, duration_secs: int):
+    twiml = await download_twiml(server_url)
+
+    stream_url = get_stream_url_from_twiml(twiml)
+
+    stream_sid = str(uuid4())
+
+    transport = WebsocketClientTransport(
+        uri=stream_url,
+        params=WebsocketClientParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+            add_wav_header=False,
+            serializer=TwilioFrameSerializer(stream_sid),
+            vad_enabled=True,
+            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=1.5)),
+            vad_audio_passthrough=True,
+        ),
+    )
+
+    llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
+
+    # We let the audio passthrough so we can record the conversation.
+    stt = DeepgramSTTService(
+        api_key=os.getenv("DEEPGRAM_API_KEY"),
+        audio_passthrough=True,
+    )
+
+    tts = CartesiaTTSService(
+        api_key=os.getenv("CARTESIA_API_KEY"),
+        voice_id="e13cae5c-ec59-4f71-b0a6-266df3c9bb8e",  # Madame Mischief
+        push_silence_after_stop=True,
+    )
+
+    messages = [
+        {
+            "role": "system",
+            "content": "You are an 8 year old child. A teacher will explain you new concepts you want to know about. Feel free to change topics whnever you want. Once you are taught something you need to keep asking for clarifications if you think someone your age would not understand what you are being taught.",
+        },
+    ]
+
+    context = OpenAILLMContext(messages)
+    context_aggregator = llm.create_context_aggregator(context)
+
+    # NOTE: Watch out! This will save all the conversation in memory. You can
+    # pass `buffer_size` to get periodic callbacks.
+    audiobuffer = AudioBufferProcessor(user_continuous_stream=False)
+
+    pipeline = Pipeline(
+        [
+            transport.input(),  # Websocket input from server
+            stt,  # Speech-To-Text
+            context_aggregator.user(),
+            llm,  # LLM
+            tts,  # Text-To-Speech
+            transport.output(),  # Websocket output to server
+            audiobuffer,  # Used to buffer the audio in the pipeline
+            context_aggregator.assistant(),
+        ]
+    )
+
+    task = PipelineTask(
+        pipeline,
+        params=PipelineParams(
+            audio_in_sample_rate=8000,
+            audio_out_sample_rate=8000,
+            allow_interruptions=True,
+        ),
+    )
+
+    @transport.event_handler("on_connected")
+    async def on_connected(transport: WebsocketClientTransport, client):
+        # Start recording.
+        await audiobuffer.start_recording()
+
+        message = TransportMessageUrgentFrame(
+            message={"event": "connected", "protocol": "Call", "version": "1.0.0"}
+        )
+        await transport.output().send_message(message)
+
+        message = TransportMessageUrgentFrame(
+            message={"event": "start", "streamSid": stream_sid, "start": {"streamSid": stream_sid}}
+        )
+        await transport.output().send_message(message)
+
+    @audiobuffer.event_handler("on_audio_data")
+    async def on_audio_data(buffer, audio, sample_rate, num_channels):
+        await save_audio(client_name, audio, sample_rate, num_channels)
+
+    async def end_call():
+        await asyncio.sleep(duration_secs)
+        await task.queue_frame(EndFrame())
+
+    runner = PipelineRunner()
+
+    await asyncio.gather(runner.run(task), end_call())
+
+
+async def main():
+    parser = argparse.ArgumentParser(description="Pipecat Twilio Chatbot Client")
+    parser.add_argument("-u", "--url", type=str, required=True, help="specify the server URL")
+    parser.add_argument(
+        "-c", "--clients", type=int, required=True, help="number of concurrent clients"
+    )
+    parser.add_argument(
+        "-d",
+        "--duration",
+        type=int,
+        default=DEFAULT_CLIENT_DURATION,
+        help=f"duration of each client in seconds (default: {DEFAULT_CLIENT_DURATION})",
+    )
+    args, _ = parser.parse_known_args()
+
+    clients = []
+    for i in range(args.clients):
+        clients.append(asyncio.create_task(run_client(f"client_{i}", args.url, args.duration)))
+    await asyncio.gather(*clients)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+</file>
+
+<file path="README.md">
+# Pipecat Twilio AI Agent
+
+This project is a FastAPI-based chatbot that integrates with Twilio to handle WebSocket connections and provide real-time communication. The project includes endpoints for starting a call and handling WebSocket connections.
+Customize the bot.py file to change the AI agent's behavior.
+This is setup to save audio recordings to the server_0_recording.wav file.
+
+## Installation
+
+```console
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Install ngrok: Follow the instructions on the [ngrok website](https://ngrok.com/download) to download and install ngrok.
+
+## Setup Environment
+
+In this project's directory, run the following command to copy the `.env.example` file to `.env`:
+
+```console
+cp .env.example .env
+```
+
+Edit the `.env` file with your own values.
+
+### OpenAI
+
+Visit https://platform.openai.com to get your `OPENAI_API_KEY`.
+
+### Deepgram
+
+Visit https://deepgram.com to get your `DEEPGRAM_API_KEY`.
+
+### ElevenLabs
+
+Visit https://elevenlabs.io to get your `ELEVEN_API_KEY` and `ELEVEN_VOICE_ID`.
+
+## Configure Twilio URLs
+
+1. **Start ngrok**:
+   In a new terminal, start ngrok to tunnel the local server:
+
+   ```sh
+   ngrok http 8765
+   ```
+
+2. **Update the Twilio Webhook**:
+
+   - Go to your Twilio phone number's configuration page
+   - Under "Voice Configuration", in the "A call comes in" section:
+     - Select "Webhook" from the dropdown
+     - Enter your ngrok URL (e.g., http://<ngrok_url>)
+     - Ensure "HTTP POST" is selected
+   - Click Save at the bottom of the page
+
+3. **Configure streams.xml**:
+   - Copy the template file to create your local version:
+     ```sh
+     cp templates/streams.xml.template templates/streams.xml
+     ```
+   - In `templates/streams.xml`, replace `<your server url>` with your ngrok URL (without `https://`)
+   - The final URL should look like: `wss://abc123.ngrok.io/ws`
+
+## Usage
+
+**Run the FastAPI application**:
+
+```sh
+# Make sure you’re in the project directory and your virtual environment is activated
+python server.py
+```
+
+The server will start on port 8765. Keep this running while you test with Twilio.
+
+To start a call, simply make a call to your configured Twilio phone number. The webhook URL will direct the call to your FastAPI application, which will handle it accordingly.
+
+## Testing
+
+It is also possible to automatically test the server without making phone calls by using a software client.
+
+First, update `templates/streams.xml` to point to your server's websocket endpoint. For example:
+
+```
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="ws://localhost:8765/ws"></Stream>
+  </Connect>
+  <Pause length="40"/>
+</Response>
+```
+
+Then, start the server with `-t` to indicate we are testing:
+
+```sh
+# Make sure you’re in the project directory and your virtual environment is activated
+python server.py -t
+```
+
+Finally, just point the client to the server's URL:
+
+```sh
+python client.py -u http://localhost:8765 -c 2
+```
+
+where `-c` allows you to create multiple concurrent clients.
+
+## Note
+
+This follows the the [Pipecat Twilio Example](https://github.com/pipecat-ai/pipecat/blob/main/examples/twilio-chatbot/README.md) repository.
+</file>
+
+<file path="server.py">
+#
+# Copyright (c) 2025, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
+
+import argparse
+import json
+
+import uvicorn
+from bot import run_bot
+from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import HTMLResponse
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for testing
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.post("/")
+async def start_call():
+    print("POST TwiML")
+    return HTMLResponse(content=open("templates/streams.xml").read(), media_type="application/xml")
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    start_data = websocket.iter_text()
+    await start_data.__anext__()
+    call_data = json.loads(await start_data.__anext__())
+    print(call_data, flush=True)
+    stream_sid = call_data["start"]["streamSid"]
+    print("WebSocket connection accepted")
+    await run_bot(websocket, stream_sid, app.state.testing)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Pipecat Twilio Chatbot Server")
+    parser.add_argument(
+        "-t", "--test", action="store_true", default=False, help="set the server in testing mode"
+    )
+    args, _ = parser.parse_known_args()
+
+    app.state.testing = args.test
+
+    uvicorn.run(app, host="0.0.0.0", port=8765)
+</file>
+
+<file path="requirements.txt">
+pipecat-ai[elevenlabs,openai,silero,deepgram]
+fastapi
+uvicorn
+python-dotenv
+loguru
+</file>
+
+</files>
