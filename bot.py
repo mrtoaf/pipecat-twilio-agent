@@ -9,6 +9,7 @@ import io
 import os
 import sys
 import wave
+import shutil
 
 import aiofiles
 from dotenv import load_dotenv
@@ -29,6 +30,10 @@ from pipecat.transports.network.fastapi_websocket import (
     FastAPIWebsocketParams,
     FastAPIWebsocketTransport,
 )
+
+from mcp import StdioServerParameters
+from pipecat.services.mcp_service import MCPClient
+from pipecat.adapters.schemas.tools_schema import ToolsSchema
 
 load_dotenv(override=True)
 
@@ -70,6 +75,43 @@ async def run_bot(websocket_client: WebSocket, stream_sid: str, testing: bool):
 
     llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
 
+    # --- MCP Integration Start ---
+
+    # 1. Define the MCP server parameters
+    # Ensure 'uvx' is available in your PATH or provide the full path
+    # Also ensure 'mcp-server-time' is installed via uv/pip
+    uvx_path = shutil.which("uvx")
+    if not uvx_path:
+        logger.error("uvx command not found in PATH. Please install uv.")
+        # Handle error appropriately, maybe raise an exception or exit
+        return
+
+    time_server_params = StdioServerParameters(
+        command=uvx_path,
+        args=["mcp-server-time"]
+    )
+
+    # 2. Create the MCPClient instance
+    try:
+        time_mcp = MCPClient(server_params=time_server_params)
+    except Exception as e:
+        logger.error(f"Failed to initialize MCP time server: {e}")
+        # Handle error appropriately
+        return
+
+    # 3. Register the tools with the LLM service
+    # This modifies the 'llm' object in place to include the tool specs
+    # and sets up the internal hooks to execute the tool when called.
+    try:
+        time_tools_schema = await time_mcp.register_tools(llm)
+        logger.info(f"Registered tools from time server: {time_tools_schema}")
+    except Exception as e:
+        logger.error(f"Failed to register tools from MCP time server: {e}")
+        # Handle error appropriately
+        return
+
+    # --- MCP Integration End ---
+
     stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"), audio_passthrough=True)
 
     tts = ElevenLabsTTSService(
@@ -80,11 +122,19 @@ async def run_bot(websocket_client: WebSocket, stream_sid: str, testing: bool):
     messages = [
         {
             "role": "system",
-            "content": "You are a helpful assistant named Ghedion Samson Beyen. Your output will be converted to audio so don't include special characters in your answers. Respond with a short short sentence.",
+            "content": (
+                "You are a helpful assistant named Ghedion Samson Beyen. "
+                "You have access to a tool that can provide the current time. Use it when asked about the time. "
+                "Your output will be converted to audio so don't include special characters in your answers. "
+                "Respond with a short short sentence."
+            ),
         },
     ]
 
-    context = OpenAILLMContext(messages)
+    # 4. Use the registered tools schema when creating the context
+    # If you add more MCP servers, you'll merge their schemas here.
+    # For now, we just use the one from the time server.
+    context = OpenAILLMContext(messages, tools=time_tools_schema)
     context_aggregator = llm.create_context_aggregator(context)
 
     # NOTE: Watch out! This will save all the conversation in memory. You can
@@ -96,11 +146,11 @@ async def run_bot(websocket_client: WebSocket, stream_sid: str, testing: bool):
             transport.input(),  # Websocket input from client
             stt,  # Speech-To-Text
             context_aggregator.user(),
-            llm,  # LLM
+            llm,  # LLM (handles tool calls internally now)
             tts,  # Text-To-Speech
             transport.output(),  # Websocket output to client
             audiobuffer,  # Used to buffer the audio in the pipeline
-            context_aggregator.assistant(),
+            context_aggregator.assistant(), # Assistant spoken responses and tool context
         ]
     )
 
@@ -118,7 +168,6 @@ async def run_bot(websocket_client: WebSocket, stream_sid: str, testing: bool):
         # Start recording.
         await audiobuffer.start_recording()
         # Kick off the conversation.
-        messages.append({"role": "system", "content": "Please introduce yourself to the user."})
         await task.queue_frames([context_aggregator.user().get_context_frame()])
 
     @transport.event_handler("on_client_disconnected")
@@ -130,10 +179,6 @@ async def run_bot(websocket_client: WebSocket, stream_sid: str, testing: bool):
         server_name = f"server_{websocket_client.client.port}"
         await save_audio(server_name, audio, sample_rate, num_channels)
 
-    # We use `handle_sigint=False` because `uvicorn` is controlling keyboard
-    # interruptions. We use `force_gc=True` to force garbage collection after
-    # the runner finishes running a task which could be useful for long running
-    # applications with multiple clients connecting.
     runner = PipelineRunner(handle_sigint=False, force_gc=True)
 
     await runner.run(task)
