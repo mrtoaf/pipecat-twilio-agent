@@ -56,14 +56,12 @@ def format_vehicle_info(data: dict) -> str:
 
 
 @mcp.tool()
-async def decode_vin(vin: str = None, modelyear: Optional[str] = None, confirmed: bool = False) -> str:
+async def decode_vin(vin: str = None, modelyear: Optional[str] = None) -> str:
     """Decode a Vehicle Identification Number (VIN) using NHTSA's API.
 
     Args:
         vin: The Vehicle Identification Number to decode.
         modelyear: Optional model year if known (improves accuracy).
-        confirmed: DO NOT SET THIS MANUALLY. The system handles VIN confirmation.
-                   This flag indicates if the user has confirmed the VIN accuracy.
     """
     if not vin:
         return "Please provide a VIN number to decode."
@@ -75,14 +73,6 @@ async def decode_vin(vin: str = None, modelyear: Optional[str] = None, confirmed
     # Basic check for likely invalid characters (VINs use letters and numbers only)
     if not re.fullmatch(r'[A-HJ-NPR-Z0-9]+', clean_vin):
         return f"The provided VIN '{vin}' contains invalid characters. Please provide a valid VIN."
-
-    # --- Confirmation Check ---
-    if not confirmed:
-        # Return a specific structured response indicating confirmation is needed
-        # Use triple spaces for TTS clarity as requested previously
-        spaced_vin = "     ".join(clean_vin)
-        return f"CONFIRM_NEEDED:{spaced_vin}"
-    # --- End Confirmation Check ---
 
     # Proceed with lookup only if confirmed
     if len(clean_vin) != 17:
