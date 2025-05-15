@@ -8,10 +8,12 @@ import argparse
 import json
 
 import uvicorn
-from bot import run_bot
+from bot_main import run_bot
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.responses import HTMLResponse
+from loguru import logger
 
 app = FastAPI()
 
