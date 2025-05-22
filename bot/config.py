@@ -48,91 +48,123 @@ flow_config = {
     "nodes": {
         "greeting": {
             "role_messages": [
-                {
-                    "role": "system",
-                    "content": "You are a friendly assistant name Ghedion Beyen-Chang who works for Blue Gem Motors in Flint, Michigan. All of your responses will be converted to speech, so don't use special characters or markdown."
-                }
+                {"role": "system", "content": "You are Ghedion Beyen, a friendly and helpful car expert from Blue Gem Motors in Flint, Michigan. Speak naturally, as if you are talking to someone on the phone. Do not use any special formatting like bullet points or numbered lists in your responses."}
             ],
             "task_messages": [
-                {
-                    "role": "system",
-                    "content": " Introduce yourself and ask the caller for their name."
+                {"role": "system", "content": "Introduce yourself and where you work. Then, politely ask for the user\'s name."}
+            ],
+            "functions": [{
+                "type": "function",
+                "function": {
+                    "name": "store_name",
+                    "handler": "store_name_handler_placeholder",
+                    "description": "Store the user's name",
+                    "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+                    "transition_to": "service_selection"
                 }
+            }]
+        },
+        "service_selection": {
+            "task_messages": [
+                {"role": "system", "content": "Thanks {name}! Would you like to get the current time or decode a VIN?"}
             ],
             "functions": [
                 {
                     "type": "function",
                     "function": {
-                        "name": "store_name",
-                        "description": "Store the user's name",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {"name": {"type": "string"}},
-                            "required": ["name"]
-                        },
-                        "transition_to": "time_info"
+                        "name": "choose_time",
+                        "handler": "choose_time_handler_placeholder",
+                        "description": "User chose to get the current time",
+                        "parameters": {"type": "object", "properties": {}, "required": []},
+                        "transition_to": "time_node"
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "choose_vin",
+                        "handler": "choose_vin_handler_placeholder",
+                        "description": "User chose to decode a VIN",
+                        "parameters": {"type": "object", "properties": {}, "required": []},
+                        "transition_to": "vin_collection"
                     }
                 }
             ]
         },
-
-        # ──────────────────────────────────────
-        # NEW node: time info
-        # ──────────────────────────────────────
-        "time_info": {
-            "role_messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an assistant that answers questions about the current time "
-                        "and converts times between time-zones. "
-                        "You may ONLY call the functions provided below."
-                    )
-                }
-            ],
+        "time_node": {
             "task_messages": [
-                {
-                    "role": "system",
-                    "content": "Ask the user what time information they need."
+                {"role": "system", "content": "Which city or timezone would you like the time for?"}
+            ],
+            "functions": [{
+                "type": "function",
+                "function": {
+                    "name": "get_current_time",
+                    "description": "Get the current time in a given timezone",
+                    "parameters": {"type": "object", "properties": {"timezone": {"type": "string"}}, "required": ["timezone"]}
                 }
+            }]
+        },
+        "vin_collection": {
+            "task_messages": [
+                {"role": "system", "content": "Please say or enter the 17-digit VIN."}
+            ],
+            "functions": [{
+                "type": "function",
+                "function": {
+                    "name": "collect_vin",
+                    "handler": "collect_vin_handler_placeholder",
+                    "description": "Capture the user's VIN",
+                    "parameters": {"type": "object", "properties": {"vin": {"type": "string"}}, "required": ["vin"]},
+                    "transition_to": "vin_confirmation"
+                }
+            }]
+        },
+        "vin_confirmation": {
+            "task_messages": [
+                {"role": "system", "content": "Okay, I have the VIN as {vin}. Is that correct?"}
             ],
             "functions": [
-                # ------- Time MCP: get_current_time -------
                 {
                     "type": "function",
                     "function": {
-                        "name": "get_current_time",
-                        "description": "Get the current time in a given IANA timezone",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "timezone": {
-                                    "type": "string",
-                                    "description": "IANA timezone, e.g. 'America/New_York'"
-                                }
-                            },
-                            "required": ["timezone"]
-                        }
+                        "name": "confirm_vin",
+                        "handler": "confirm_vin_handler_placeholder",
+                        "description": "User confirmed the VIN is correct",
+                        "parameters": {"type": "object", "properties": {}, "required": []},
+                        "transition_to": "vin_lookup"
                     }
                 },
-                # ------- Time MCP: convert_time -------
                 {
                     "type": "function",
                     "function": {
-                        "name": "convert_time",
-                        "description": "Convert a time between two IANA timezones",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "source_timezone": {"type": "string"},
-                                "time":            {"type": "string", "description": "24-hour HH:MM"},
-                                "target_timezone": {"type": "string"}
-                            },
-                            "required": ["source_timezone", "time", "target_timezone"]
-                        }
+                        "name": "reject_vin",
+                        "handler": "reject_vin_handler_placeholder",
+                        "description": "User said the VIN is incorrect",
+                        "parameters": {"type": "object", "properties": {}, "required": []},
+                        "transition_to": "vin_collection"
                     }
                 }
             ]
+        },
+        "vin_lookup": {
+            "task_messages": [
+                {"role": "system", "content": "Alright, looking up that VIN for you now..."}
+            ],
+            "functions": [{
+                "type": "function",
+                "function": {
+                    "name": "decode_vin",
+                    "description": "Decode a Vehicle Identification Number (VIN) using NHTSA's API.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "vin": {"type": "string"},
+                            "modelyear": {"type": "string"}
+                        },
+                        "required": ["vin"]
+                    }
+                }
+            }]
         }
     }
 } 

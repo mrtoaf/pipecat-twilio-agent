@@ -6,19 +6,27 @@
 
 import sys
 from contextlib import asynccontextmanager
-import asyncio # Added import
+import asyncio
 
 from fastapi import WebSocket
 from loguru import logger
-import time
 
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner, PipelineTask
 from pipecat.pipeline.task import PipelineParams
-from pipecat_flows import FlowManager, FlowArgs, FlowResult
+from pipecat_flows import FlowManager
 
-from bot.config import BotConfig, flow_config  # Changed to absolute import
-from bot.mcp import register_mcp_clients      # Changed to absolute import
+from bot.config import BotConfig, flow_config
+from bot.flow_handlers import (
+    store_name,
+    choose_time_handler,
+    choose_vin_handler,
+    collect_vin_handler,
+    store_vin_in_state_callback,
+    confirm_vin_handler,
+    reject_vin_handler
+)
+from bot.mcp import register_mcp_clients
 from bot.services import (
     create_llm,
     create_tts,
@@ -36,21 +44,40 @@ from bot.event_handlers import (
     on_audio_data_handler,
 )
 
-# Removed load_dotenv, it's in config.py
-# Removed unused imports like os, shutil, datetime, io, wave, aiofiles (moved or not needed here)
-# Removed MCP StdioServerParameters, MCPClient - they are now in bot.mcp
-# Removed OpenAILLMContext, AudioBufferProcessor etc. direct imports - using factories from bot.services
-
 logger.remove(0)
 logger.add(sys.stderr, level="DEBUG")
 
-# store_name function remains here for now as it's tied to the flow_config structure.
-# Ideally, flow handlers would also be part of a separate module or structured differently.
-async def store_name(args: FlowArgs) -> FlowResult:
-    """Store the user's name in the flow state."""
-    return {"status": "success", "name": args["name"]}
+# Mapping of placeholder strings to actual handler functions
+PYTHON_HANDLERS_MAP = {
+    "store_name_handler_placeholder": store_name,
+    "choose_time_handler_placeholder": choose_time_handler,
+    "choose_vin_handler_placeholder": choose_vin_handler,
+    "collect_vin_handler_placeholder": collect_vin_handler,
+    "store_vin_in_state_callback_placeholder": store_vin_in_state_callback,
+    "confirm_vin_handler_placeholder": confirm_vin_handler,
+    "reject_vin_handler_placeholder": reject_vin_handler,
+}
 
+def wire_python_handlers(config_to_wire):
+    """Iterates through the flow_config and replaces string placeholders with actual functions."""
+    for node_id, node_cfg in config_to_wire.get("nodes", {}).items():
+        if "functions" in node_cfg:
+            for fn_def_item in node_cfg["functions"]:
+                # The function definition might be directly under 'function' or nested
+                # This check ensures we are working with the actual function definition dictionary
+                actual_fn_def = fn_def_item.get("function") if isinstance(fn_def_item.get("function"), dict) else fn_def_item
 
+                if isinstance(actual_fn_def, dict):
+                    handler_placeholder = actual_fn_def.get("handler")
+                    if isinstance(handler_placeholder, str) and handler_placeholder in PYTHON_HANDLERS_MAP:
+                        actual_fn_def["handler"] = PYTHON_HANDLERS_MAP[handler_placeholder]
+                        logger.debug(f"Wired Python handler for '{actual_fn_def.get('name')}' in node '{node_id}'.")
+                    
+                    callback_placeholder = actual_fn_def.get("transition_callback")
+                    if isinstance(callback_placeholder, str) and callback_placeholder in PYTHON_HANDLERS_MAP:
+                        actual_fn_def["transition_callback"] = PYTHON_HANDLERS_MAP[callback_placeholder]
+                        logger.debug(f"Wired Python transition_callback for '{actual_fn_def.get('name')}' in node '{node_id}'.")
+    return config_to_wire
 
 @asynccontextmanager
 async def pipeline_runner_context(pipeline: Pipeline, task_params: PipelineParams):
@@ -58,29 +85,26 @@ async def pipeline_runner_context(pipeline: Pipeline, task_params: PipelineParam
     task = PipelineTask(pipeline, params=task_params)
     runner = PipelineRunner(handle_sigint=False, force_gc=True)
     try:
-        # Yield the task so it can be used by event handlers if necessary
-        # (e.g., for cancellation on disconnect)
         yield task 
-        await runner.run(task) # This was missing, runner.run should be awaited
+        await runner.run(task)
     finally:
         logger.info("Pipeline stopping. Cancelling task...")
-        await task.cancel() # Ensure task is cancelled
+        await task.cancel()
         logger.info("Pipeline task cancelled.")
-
 
 async def run_bot(websocket_client: WebSocket, stream_sid: str, testing: bool):
     try:
-        cfg = BotConfig()  # Initialize config, loads .env and validates
+        cfg = BotConfig() 
     except ValueError as e:
         logger.error(f"Configuration error: {e}")
         return
 
-    # 0. Update flow_config with the actual handler function
-    # This is a bit of a workaround. Ideally, handlers could be specified by name
-    # and resolved by the FlowManager, or the flow_config could be built more dynamically.
-    flow_config["nodes"]["greeting"]["functions"][0]["function"]["handler"] = store_name
+    # 1. Wire Python handlers into the imported flow_config
+    # This operates on the flow_config imported from bot.config
+    wired_flow_config = wire_python_handlers(flow_config) # flow_config is now modified in-place
+    logger.info("Python handlers wired into flow_config.")
 
-    # 1. Create services
+    # 2. Create services (LLM is needed for MCP registration and adapter)
     transport = create_transport(websocket_client, stream_sid, cfg)
     llm = create_llm(cfg)
     tts = create_tts(cfg)
@@ -88,14 +112,16 @@ async def run_bot(websocket_client: WebSocket, stream_sid: str, testing: bool):
     audio_buffer_processor = create_audio_buffer_processor(testing, cfg)
     stt_mute_filter = create_stt_mute_filter()
 
-    # 2. Register MCP tools and create context
+    # 3. Register MCP tools and then run the MCP adapter logic
+    # This must happen AFTER Python handlers are wired if both might target the same function name,
+    # though typically MCP tools have unique names not used by Python handlers.
+    # The adapter logic for MCP tools should run on the `wired_flow_config`.
     try:
         tools_schema = await register_mcp_clients(llm, cfg)
         logger.info(f"Successfully registered MCP clients. Tools: {tools_schema}")
 
-        # Adapt MCP wrappers for Flows
+        # Adapt MCP wrappers for Flows - This uses the `wired_flow_config`
         if tools_schema and tools_schema.standard_tools:
-            # 1. Grab the raw MCP wrapper functions from the LLM registry
             mcp_wrappers = {
                 name: entry.handler
                 for name, entry in llm._functions.items()
@@ -103,44 +129,37 @@ async def run_bot(websocket_client: WebSocket, stream_sid: str, testing: bool):
             }
             logger.debug(f"Raw MCP wrappers identified: {mcp_wrappers.keys()}")
 
-            # 2. Adapter: turn the 6-arg MCP wrapper into a 1-arg Flows handler
             def make_flow_handler(wrapper_fn, tool_name, llm_service):
-                async def handler(args: FlowArgs) -> FlowResult: # Added type hints
+                async def handler(args: dict) -> dict: # Using dict for args and result for simplicity here
                     loop = asyncio.get_running_loop()
                     fut = loop.create_future()
                     async def result_cb(result, *, properties=None):
-                        # Deliver the MCP answer into our Future
-                        if not fut.done(): # Ensure future is not already set
+                        if not fut.done():
                             fut.set_result(result)
                         else:
                             logger.warning(f"Future for {tool_name} was already done. MCP result: {result}")
-
-                    # You can synthesize any string as call_id
+                    
                     call_id = f"flow_{tool_name}_{int(loop.time()*1000)}"
-
-                    # Invoke the real MCP wrapper with all six parameters
                     try:
                         await wrapper_fn(
-                            tool_name,    # function_name
-                            call_id,      # tool_call_id
-                            args,         # arguments: FlowArgs is a dict-like object
-                            llm_service,  # the OpenAILLMService instance
-                            None,         # context: usually an OpenAIContext, but most MCP tools don't need it
-                            result_cb,    # the callback the wrapper will await when it's done
+                            tool_name, 
+                            call_id, 
+                            args, 
+                            llm_service, 
+                            None, 
+                            result_cb,
                         )
                     except Exception as e:
                         logger.error(f"Error invoking MCP wrapper for {tool_name}: {e}")
                         if not fut.done():
-                            fut.set_exception(e) # Propagate exception if wrapper fails
-
-                    # Wait for the MCP wrapper to call us back
+                            fut.set_exception(e)
+                    
                     try:
-                        mcp_result = await asyncio.wait_for(fut, timeout=30.0) # Added timeout
-                        # Ensure a dictionary is returned, as FlowResult is a type alias for Dict[str, Any]
+                        mcp_result = await asyncio.wait_for(fut, timeout=30.0)
                         if isinstance(mcp_result, str):
                              return {"status": "success", "message": mcp_result}
                         elif isinstance(mcp_result, dict):
-                             return mcp_result # Assume it's already a valid FlowResult
+                             return mcp_result
                         else:
                              logger.warning(f"Unexpected MCP result type for {tool_name}: {type(mcp_result)}. Wrapping.")
                              return {"status": "success", "data": mcp_result}
@@ -152,39 +171,31 @@ async def run_bot(websocket_client: WebSocket, stream_sid: str, testing: bool):
                         return {"status": "error", "message": str(e)}
                 return handler
 
-            # 3. Build a Flows handler for each MCP tool
-            flow_wrappers = {
+            flow_wrappers_for_mcp = {
                 name: make_flow_handler(wrapper_fn, name, llm)
                 for name, wrapper_fn in mcp_wrappers.items()
             }
-            logger.debug(f"Prepared Flow handlers for MCP tools: {flow_wrappers.keys()}")
+            logger.debug(f"Prepared Flow handlers for MCP tools: {flow_wrappers_for_mcp.keys()}")
 
-            # 4. Inject those handlers into your flow_config
-            for node_id, node_cfg in flow_config["nodes"].items():
-                if "functions" in node_cfg: # Check if the node has functions defined
-                    for fn_def in node_cfg["functions"]:
-                        # The function definition might be directly under 'function' or nested
-                        actual_fn_def = fn_def.get("function") if isinstance(fn_def.get("function"), dict) else fn_def
-                        
-                        if isinstance(actual_fn_def, dict) and (tool_name := actual_fn_def.get("name")): # Use walrus operator
-                            # If we have an adapted Flow handler for this tool, inject it
-                            if tool_name in flow_wrappers:
-                                actual_fn_def["handler"] = flow_wrappers[tool_name]
-                                logger.info(f"Injected adapted Flow handler for MCP tool '{tool_name}' in node '{node_id}'.")
-                        else:
-                            logger.warning(f"Skipping function definition in node '{node_id}' due to unexpected structure or missing name: {fn_def}")
-                else:
-                    logger.debug(f"Node '{node_id}' has no functions defined, skipping wrapper injection.")
-
+            # Inject MCP handlers into the `wired_flow_config`
+            # This will only add handlers where one isn't already present from Python wiring.
+            for node_id, node_cfg in wired_flow_config["nodes"].items(): # Use wired_flow_config
+                if "functions" in node_cfg:
+                    for fn_def_item in node_cfg["functions"]:
+                        actual_fn_def = fn_def_item.get("function") if isinstance(fn_def_item.get("function"), dict) else fn_def_item
+                        if isinstance(actual_fn_def, dict) and (tool_name := actual_fn_def.get("name")):
+                            # Only inject if there isn't already a Python handler AND it's an MCP tool
+                            if tool_name in flow_wrappers_for_mcp and not callable(actual_fn_def.get("handler")):
+                                actual_fn_def["handler"] = flow_wrappers_for_mcp[tool_name]
+                                logger.info(f"Injected adapted MCP Flow handler for tool '{tool_name}' in node '{node_id}'.")
     except Exception as e:
-        logger.error(f"Failed to register MCP clients or inject handlers: {e}")
-        # Depending on requirements, you might want to return or use a default empty schema
+        logger.error(f"Failed during MCP client registration or handler injection: {e}")
         return
     
-    pipeline_context = create_pipeline_context(tools_schema)
+    pipeline_context = create_pipeline_context(tools_schema if 'tools_schema' in locals() else None)
     context_aggregator = create_context_aggregator(llm, pipeline_context)
 
-    # 3. Build pipeline
+    # 4. Build pipeline
     pipeline = build_pipeline(
         transport=transport,
         stt=stt,
@@ -195,43 +206,31 @@ async def run_bot(websocket_client: WebSocket, stream_sid: str, testing: bool):
         context_aggregator=context_aggregator
     )
 
-    # 4. Define PipelineParams
+    # 5. Define PipelineParams
     pipeline_params = PipelineParams(
         audio_in_sample_rate=cfg.audio_in_sample_rate,
         audio_out_sample_rate=cfg.audio_out_sample_rate,
         allow_interruptions=True,
     )
-
-    # 5. Initialize FlowManager
-    # The PipelineTask is now created inside the context manager
-    # We'll pass the flow_manager to the connect handler after it's created.
     
-    # This is a temporary solution for passing task to flow_manager
-    # In a real scenario, flow_manager might not need direct task access like this
-    # or it would be obtained differently.
     _task_ref_for_flow_manager = None 
 
     async with pipeline_runner_context(pipeline, pipeline_params) as task_for_handlers:
-        _task_ref_for_flow_manager = task_for_handlers # Store the task for FlowManager
+        _task_ref_for_flow_manager = task_for_handlers
         
         flow_manager = FlowManager(
-            task=_task_ref_for_flow_manager, # Use the task from context manager
+            task=_task_ref_for_flow_manager,
             llm=llm,
             context_aggregator=context_aggregator,
-            flow_config=flow_config
+            flow_config=wired_flow_config # Use the fully wired config
         )
-
-        # 6. Register event handlers
-        # We use functools.partial or lambdas to pass necessary context to handlers
         
         @transport.event_handler("on_client_connected")
         async def on_client_connected(transport_param, client_param):
-            # Now flow_manager is defined and can be passed
             await on_client_connected_handler(transport_param, client_param, flow_manager, audio_buffer_processor)
 
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport_param, client_param):
-            # task_for_handlers is from the context manager's scope
             await on_client_disconnected_handler(transport_param, client_param, task_for_handlers)
 
         @audio_buffer_processor.event_handler("on_audio_data")
@@ -241,23 +240,7 @@ async def run_bot(websocket_client: WebSocket, stream_sid: str, testing: bool):
             )
         
         logger.info("Starting pipeline run...")
-        # The runner.run(task) is now handled by the context manager's exit
-        # The `initialize` call for flow_manager is in `on_client_connected_handler`
-        # We need a way to keep the `run_bot` alive until the pipeline is done.
-        # The context manager's `await runner.run(task)` handles this.
-        # If on_client_connected is not called, initialize won't run.
-        # This implies that the connection must be established for the bot to start its flow.
-        # If a connection is already established when run_bot is called, this setup is fine.
-        # If run_bot sets up listeners and waits for a connection, initialize should be there.
-        
-        # For FastAPI, the connection is usually established before this `run_bot` is called as a dependency.
-        # So, `on_client_connected` should fire shortly after `runner.run` begins (or is set up).
-        
-        # The `await runner.run(task)` in the context manager will block here until the task completes or is cancelled.
-        logger.info("Pipeline runner_context entered. Waiting for pipeline to complete...")
+        # runner.run(task) is handled by the context manager
 
     logger.info("run_bot completed.")
-
-# Removed save_audio, it's in bot.utils
-# Removed original PipelineRunner and task.cancel() calls, now handled by context manager
 
