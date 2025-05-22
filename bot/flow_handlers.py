@@ -1,5 +1,6 @@
 from pipecat_flows import FlowArgs, FlowResult, FlowManager
 from loguru import logger
+import re
 
 async def store_name(args: FlowArgs) -> FlowResult:
     """Store the user's name from flow arguments."""
@@ -21,16 +22,21 @@ async def choose_vin_handler(args: FlowArgs) -> FlowResult:
     return {"status": "success"}
 
 async def collect_vin_handler(args: FlowArgs) -> FlowResult:
-    """Collects the VIN from the arguments and returns it.
-    The actual storage into flow_manager.state will be handled by a transition_callback.
-    """
-    vin = args.get("vin")
-    if vin:
-        logger.info(f"VIN collected from args: {vin}")
-        return {"status": "success", "vin": vin}
-    else:
-        logger.warning("No VIN provided in collect_vin_handler args")
-        return {"status": "error", "message": "No VIN provided by user."}
+    """Collects the VIN from the arguments, cleans it, validates length, and returns it."""
+    raw_vin = args.get("vin", "")
+    # Remove any non-alphanumeric chars (spaces, hyphens, commas, etc.) and uppercase
+    cleaned_vin = re.sub(r'[^A-Za-z0-9]', '', raw_vin).upper()
+    
+    # Validate the cleaned VIN: 17 characters, valid VIN characters (A-H, J-N, P, R-Z, 0-9)
+    if not re.fullmatch(r'[A-HJ-NPR-Z0-9]{17}', cleaned_vin):
+        logger.warning(f"collect_vin_handler: Raw VIN '{raw_vin}' cleaned to '{cleaned_vin}' is invalid.")
+        return {
+            "status": "error", 
+            "message": "The V I N you provided was not a valid 17-character V I N. Please try again, saying or entering the full V I N clearly."
+        }
+    
+    logger.info(f"VIN collected, cleaned, and validated: {cleaned_vin} (from raw: '{raw_vin}')")
+    return {"status": "success", "vin": cleaned_vin}
 
 async def store_vin_in_state_callback(standard_args: dict, handler_result: FlowResult, flow_manager: FlowManager):
     """Transition callback to store the VIN (from collect_vin_handler result) into flow_manager.state."""

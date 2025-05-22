@@ -51,7 +51,7 @@ flow_config = {
                 {"role": "system", "content": "You are Ghedion Beyen, a friendly and helpful car expert from Blue Gem Motors in Flint, Michigan. Speak naturally, as if you are talking to someone on the phone. Do not use any special formatting like bullet points or numbered lists in your responses."}
             ],
             "task_messages": [
-                {"role": "system", "content": "Introduce yourself and where you work. Then, politely ask for the user\'s name."}
+                {"role": "system", "content": "Introduce yourself and where you work. Then, politely ask for the user\'s name. Be brief and no BS."}
             ],
             "functions": [{
                 "type": "function",
@@ -121,7 +121,8 @@ flow_config = {
         },
         "vin_confirmation": {
             "task_messages": [
-                {"role": "system", "content": "Okay, I have the VIN as {vin}. Is that correct?"}
+                {"role": "system", "content": "When you encounter the {{vin}} variable in a phrase, and you are about to speak it, please read each character of that V I N individually, separated by a comma and a space. For example, if the V I N is 'ABC123XYZ', you should say 'A, B, C, 1, 2, 3, X, Y, Z'."},
+                {"role": "system", "content": "Okay, I have the V I N as {{vin}}. Is that correct? Remember to spell out V I N as vee eye en, and read the V I N characters as just instructed."}
             ],
             "functions": [
                 {
@@ -147,9 +148,11 @@ flow_config = {
             ]
         },
         "vin_lookup": {
-            "task_messages": [
-                {"role": "system", "content": "Alright, looking up that VIN for you now..."}
+            "role_messages": [
+                {"role": "system", "content": "When presenting vehicle information, always describe it in clear, complete sentences suitable for text-to-speech. Do not use bullet points, numbered lists, or any special formatting. Ensure the acronym V I N is pronounced as individual letters: vee eye en. When stating a V I N, read each character individually, separating them with a comma and a space (e.g., \'1, G, C, E, K\')."}
             ],
+            "task_messages": [
+                {"role": "system", "content": "Alright, looking up that V I N for you now..."},            ],
             "functions": [{
                 "type": "function",
                 "function": {
